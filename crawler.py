@@ -1,5 +1,4 @@
 import PIL
-import pandas as pd
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.chrome.options import Options
@@ -10,9 +9,18 @@ import io
 from PIL import Image
 from pathlib import Path
 import hashlib
-import time
-from urllib.parse import urlparse
+import argparse
 # Initialize the Chrome driver with options
+
+def argument_parser():
+    parser = argparse.ArgumentParser(description="Image scraping crawler for loaded.gg")
+    parser.add_argument(
+        '--output',
+        default='Images',
+        help='Output directory for downloaded images'
+    )
+    args = parser.parse_args()
+    return args
 def get_content_from_url(url):
     chrome_options = Options()
     chrome_options.add_argument("--headless")
@@ -47,7 +55,7 @@ def scrape_links_and_visit(driver, url):
             all_image_urls += find_images_urls(link, driver, all_image_urls)
             print(f"Found {len(all_image_urls)} <img> elements\n")
             
-            if link == "https://www.loaded.gg/":
+            if link == "https://www.loaded.gg/": # only on main page
                 for i in range(4):
 
                     bg_url = get_background_image_url(driver)
@@ -151,16 +159,21 @@ def print_info_to_txt(image_url_to_path):
                 f.write(f"Image URL: {url}\n")
                 f.write(f"Image Info: {image_info}\n\n")
 def main():
+    args = argument_parser()
 
+    output_dir=Path(args.output).resolve() # replace if it doesn't work
+
+    if not output_dir.exists():
+        output_dir.mkdir(parents=True)
+        
     url = "https://www.loaded.gg/"
-
     driver = get_content_from_url(url)
 
     all_image_urls = scrape_links_and_visit(driver, url)
 
     image_paths = download_images_locally(
         all_image_urls,
-        output_dir=Path(__file__).resolve().parent / "Images") # replace if it doesn't work
+        output_dir)
     
     print_info_to_txt(image_paths)
     
