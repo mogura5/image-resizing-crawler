@@ -1,91 +1,170 @@
+import PIL
 import pandas as pd
-from bs4 import BeautifulSoup
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.chrome.options import Options
 from webdriver_manager.chrome import ChromeDriverManager
+from selenium.webdriver.common.by import By
 import requests
 import io
 from PIL import Image
 from pathlib import Path
 import hashlib
-import os
-
+import time
+from urllib.parse import urlparse
 # Initialize the Chrome driver with options
 def get_content_from_url(url):
     chrome_options = Options()
     chrome_options.add_argument("--headless")
-    chrome_options.add_argument("--no-sandbox")
     driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=chrome_options)
     
     driver.get(url)
-    page_content = driver.page_source
-    driver.quit()
-    with open("page_content.html", "w", encoding="utf-8") as file:
-        file.write(page_content)
-    return page_content
+    return driver
+def is_valid_loaded_link(link):
+    if link.startswith("https://www.loaded.gg/privacy-policy/"):
+        return False
+    if link.startswith("https://www.loaded.gg/"):
+        return True
+    return False
+def scrape_links_and_visit(driver, url):        
+    driver.get(url)
+    links = driver.find_elements(By.TAG_NAME, "a")
+    raw_links = [link.get_attribute("href") for link in links]
+    available_links = [link for link in raw_links if is_valid_loaded_link(link)]
+    all_image_urls = []
+    visited_links = set()
 
-def parse_image_urls(page_content, header, image, source, location, type):
-    results = []
-    soup = BeautifulSoup(page_content, 'html.parser')
+    print(f"\n * Found {len(available_links)} valid links to visit. *\n")
 
-    for a in soup.find_all(location, class_=header):
-
-        if type == "class":
-            name = a.get(source)
-            if name not in results:
-                results.append(name)
-
-        elif type == "style":
-            name = a.get(type)
+    for idx, link in enumerate(available_links):
+        if link in visited_links:
+            continue
+        visited_links.add(link)
+        print(f"+ Visiting link {idx+1}/{len(available_links)}: {link} +\n")
+        
+        try:
+            driver.get(link)
+            all_image_urls += find_images_urls(link, driver, all_image_urls)
+            print(f"Found {len(all_image_urls)} <img> elements\n")
             
-            if "url(" in name:
-                start = name.find("url(") + 4
-                end = name.find(")", start)
-                url = name[start:end].strip('"')
+            if link == "https://www.loaded.gg/":
+                for i in range(4):
 
-                if url not in results:
-                    results.append(url)
-        else:
-            name = a.find(image)
-            if name not in results:
-                results.append(name.get(source))
+                    bg_url = get_background_image_url(driver)
 
-    return results
+                    if bg_url and bg_url not in all_image_urls:
+                        all_image_urls.append(bg_url)
 
-def save_to_csv(image_urls):
-    df = pd.DataFrame({"Results": image_urls})
-    df.to_csv("image_urls.csv", index=False, mode='a', encoding='utf-8')
+                    driver.refresh()
+            else:
+                bg_url = get_background_image_url(driver)
 
-# def resize_and_optimize_image(image_path, output_path, size=(800, 600), quality = 80):
-#     with Image.open(image_path) as img:
-#         img = img.convert("RGB")
-#         img.thumbnail(size)
-#         img.save(output_path, "JPEG", quality=80)
+                if bg_url and bg_url not in all_image_urls:
+                    all_image_urls.append(bg_url)
 
-def download_image_to_file(image_url, output_dir):
-    image_content = requests.get(image_url).content
-    image_file  = io.BytesIO(image_content)
-    image = Image.open(image_file).convert("RGB")
-    filename = hashlib.sha1(image_content).hexdigest() + ".jpg"
+            driver.back()
+
+        except Exception as e:
+            print(f"Error accessing link {link}: {e}")
+
+    return all_image_urls
+def find_images_urls(url, driver, visited_image_urls):
+    driver.get(url)
+    images = driver.find_elements(By.CSS_SELECTOR, "img")
+
+    new_image_urls = []
+
+    for image in images:
+        image_url = image.get_attribute("src")
+
+        if image_url.lower().endswith(".svg") :
+            continue
+
+        if image_url.startswith("data:"):
+            continue
+        
+        if image_url not in visited_image_urls:
+            new_image_urls.append(image_url)
+
+    return new_image_urls
+def get_background_image_url(driver):
+
+    bg_element = driver.find_element(By.ID, "heroBackground")
+
+    style = bg_element.get_attribute("style")
+    
+    if "url(" in style:
+        start = style.find('url("') + 5
+        end = style.find('")', start)
+        return style[start:end] 
+    return None
+def download_images_locally(urls, output_dir):
+    paths = {}
+
+    for image_url in urls:
+        filename = image_url.split("/")[-1]
+        label = filename.split(".")[0]
+        image_path = image_to_file(
+            image_url,
+            output_dir,
+            label=label
+        )
+        if image_path:
+            paths[image_url] = image_path
+
+    return paths
+def image_to_file(image_url, output_dir, label):
+    image_content = requests.get(image_url, stream=True).content
+
+    image_file = io.BytesIO(image_content)
+    try:
+        image = Image.open(image_file).convert("RGB")
+    except PIL.UnidentifiedImageError:
+        print(f"Error: Unable to identify image file {image_url}")
+        return None
+
+    if label is not None:
+        filename = f"{label}.jpg"
+    else:
+        filename = hashlib.sha1(image_content).hexdigest() + ".jpg"
+
     file_path = Path(output_dir) / filename
     image.save(file_path, "JPEG")
+    return file_path
+def check_image_info(path):
+    with Image.open(path) as img:
+        return {
+            "format": img.format,
+            "size": img.size,
+            "mode": img.mode,
+            "file_size_kb": Path(path).stat().st_size / 1024
+        }
+def print_info_to_txt(image_url_to_path):
 
+    with open("image_urls.txt", "r") as f:
+        existing_urls = f.read().splitlines()
+
+    with open("image_urls.txt", "a") as f:
+        for url, path in image_url_to_path.items():
+            if url not in existing_urls:
+                image_info = check_image_info(path)
+                f.write(f"Image URL: {url}\n")
+                f.write(f"Image Info: {image_info}\n\n")
 def main():
-    url = "https://www.loaded.gg/"
-    content = get_content_from_url(url)
-    image_urls = []
-    image_urls += parse_image_urls(content, "hero__bg", "img", "style", "div", "style")
-    image_urls += parse_image_urls(content, "work-section__slide", "img", "src", "div", "wrapper")
-    image_urls += parse_image_urls(content, "partners-section__img", "img", "src", "img", "class")
-    image_urls += parse_image_urls(content, "creators-block", "img", "src", "a", "wrapper")
-    image_urls += parse_image_urls(content, "service-section__image", "img", "src", "div", "wrapper")
-    
-    save_to_csv(image_urls)
 
-    for image_url in image_urls:
-        download_image_to_file(
-            image_url, output_dir=Path("/Users/manakaogura/Desktop/Loaded/image-resizing-crawler/Images"))
+    url = "https://www.loaded.gg/"
+
+    driver = get_content_from_url(url)
+
+    all_image_urls = scrape_links_and_visit(driver, url)
+
+    image_paths = download_images_locally(
+        all_image_urls,
+        output_dir=Path(__file__).resolve().parent / "Images") # replace if it doesn't work
+    
+    print_info_to_txt(image_paths)
+    
+    driver.quit()
 
 if __name__ == "__main__":
     results = main()
