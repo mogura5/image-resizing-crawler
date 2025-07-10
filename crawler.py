@@ -1,41 +1,39 @@
 import PIL
-from selenium import webdriver
-from selenium.webdriver.chrome.service import Service
-from selenium.webdriver.chrome.options import Options
-from webdriver_manager.chrome import ChromeDriverManager
-from selenium.webdriver.common.by import By
+from PIL import Image
 import requests
 import io
-from PIL import Image
 from pathlib import Path
 import hashlib
 import argparse
-# Initialize the Chrome driver with options
+from selenium import webdriver
+from selenium.webdriver.chrome.service import Service
+from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.common.by import By
+from webdriver_manager.chrome import ChromeDriverManager
+
+BACKGROUND_ID = "heroBackground"
 
 def argument_parser():
     parser = argparse.ArgumentParser(description="Image scraping crawler for loaded.gg")
     parser.add_argument(
         '--output',
-        default='Images',
+        default='Aggressive Images',
         help='Output directory for downloaded images'
     )
-    args = parser.parse_args()
-    return args
-def get_content_from_url(url):
+    return parser.parse_args()
+def setup_driver():
     chrome_options = Options()
     chrome_options.add_argument("--headless")
-    driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=chrome_options)
-    
-    driver.get(url)
-    return driver
+    return webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=chrome_options)
+
 def is_valid_loaded_link(link):
     if link.startswith("https://www.loaded.gg/privacy-policy/"):
         return False
     if link.startswith("https://www.loaded.gg/"):
         return True
     return False
-def scrape_links_and_visit(driver, url):        
-    driver.get(url)
+def scrape_links_and_visit(driver, base_url):        
+    driver.get(base_url)
     links = driver.find_elements(By.TAG_NAME, "a")
     raw_links = [link.get_attribute("href") for link in links]
     available_links = [link for link in raw_links if is_valid_loaded_link(link)]
@@ -47,30 +45,28 @@ def scrape_links_and_visit(driver, url):
     for idx, link in enumerate(available_links):
         if link in visited_links:
             continue
+
         visited_links.add(link)
         print(f"+ Visiting link {idx+1}/{len(available_links)}: {link} +\n")
         
         try:
             driver.get(link)
             all_image_urls += find_images_urls(link, driver, all_image_urls)
-            print(f"Found {len(all_image_urls)} <img> elements\n")
+            print(f"Found {len(all_image_urls)} images in total\n")
             
-            if link == "https://www.loaded.gg/": # only on main page
-                for i in range(4):
+            if link == base_url: # only on main page
+                for _ in range(4):
 
+                    driver.refresh()
                     bg_url = get_background_image_url(driver)
 
                     if bg_url and bg_url not in all_image_urls:
                         all_image_urls.append(bg_url)
-
-                    driver.refresh()
             else:
                 bg_url = get_background_image_url(driver)
 
                 if bg_url and bg_url not in all_image_urls:
                     all_image_urls.append(bg_url)
-
-            driver.back()
 
         except Exception as e:
             print(f"Error accessing link {link}: {e}")
@@ -97,7 +93,7 @@ def find_images_urls(url, driver, visited_image_urls):
     return new_image_urls
 def get_background_image_url(driver):
 
-    bg_element = driver.find_element(By.ID, "heroBackground")
+    bg_element = driver.find_element(By.ID, BACKGROUND_ID)
 
     style = bg_element.get_attribute("style")
     
@@ -107,6 +103,7 @@ def get_background_image_url(driver):
         return style[start:end] 
     return None
 def download_images_locally(urls, output_dir):
+
     paths = {}
 
     for image_url in urls:
@@ -122,11 +119,11 @@ def download_images_locally(urls, output_dir):
 
     return paths
 def image_to_file(image_url, output_dir, label):
+
     image_content = requests.get(image_url, stream=True).content
 
-    image_file = io.BytesIO(image_content)
     try:
-        image = Image.open(image_file).convert("RGB")
+        image = Image.open(io.BytesIO(image_content)).convert("RGB")
     except PIL.UnidentifiedImageError:
         print(f"Error: Unable to identify image file {image_url}")
         return None
@@ -137,9 +134,11 @@ def image_to_file(image_url, output_dir, label):
         filename = hashlib.sha1(image_content).hexdigest() + ".jpg"
 
     file_path = Path(output_dir) / filename
+
     image.save(file_path, "JPEG")
     return file_path
 def check_image_info(path):
+
     with Image.open(path) as img:
         return {
             "format": img.format,
@@ -160,16 +159,14 @@ def print_info_to_txt(image_url_to_path):
                 f.write(f"Image Info: {image_info}\n\n")
 def main():
     args = argument_parser()
-
-    output_dir=Path(args.output).resolve() # replace if it doesn't work
-
+    output_dir=Path(args.output) # replace if it doesn't work
     if not output_dir.exists():
         output_dir.mkdir(parents=True)
         
-    url = "https://www.loaded.gg/"
-    driver = get_content_from_url(url)
+    base_url = "https://www.loaded.gg/"
+    driver = setup_driver()
 
-    all_image_urls = scrape_links_and_visit(driver, url)
+    all_image_urls = scrape_links_and_visit(driver, base_url)
 
     image_paths = download_images_locally(
         all_image_urls,

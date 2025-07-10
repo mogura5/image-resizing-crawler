@@ -595,6 +595,9 @@ Image Info: {'format': 'JPEG', 'size': (816, 767), 'mode': 'RGB', 'file_size_kb'
 Image URL: https://www.loaded.gg/wp-content/uploads/2023/09/iiTzTimmy-15-scaled.jpg
 Image Info: {'format': 'JPEG', 'size': (2048, 2560), 'mode': 'RGB', 'file_size_kb': 341.744140625}
 
+Image URL: https://www.loaded.gg/wp-content/uploads/2023/09/iiTzTimmy-3.png
+Image Info: {'format': 'JPEG', 'size': (1172, 1121), 'mode': 'RGB', 'file_size_kb': 268.0888671875}
+
 Image URL: https://www.loaded.gg/wp-content/uploads/2023/09/iiTzTimmy-1.png
 Image Info: {'format': 'JPEG', 'size': (940, 1172), 'mode': 'RGB', 'file_size_kb': 141.40625}
 
