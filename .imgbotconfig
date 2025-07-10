@@ -1,3 +1,4 @@
     {
-      "aggressiveCompression": true
+      "aggressiveCompression": true,
+      "branch": "aggression-test"
     }
