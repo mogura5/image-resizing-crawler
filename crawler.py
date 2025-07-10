@@ -10,7 +10,6 @@ from PIL import Image
 from pathlib import Path
 import hashlib
 import argparse
-# Initialize the Chrome driver with options
 
 def argument_parser():
     parser = argparse.ArgumentParser(description="Image scraping crawler for loaded.gg")
@@ -56,7 +55,7 @@ def scrape_links_and_visit(driver, url):
             print(f"Found {len(all_image_urls)} <img> elements\n")
             
             if link == "https://www.loaded.gg/": # only on main page
-                for i in range(4):
+                for _ in range(4):
 
                     bg_url = get_background_image_url(driver)
 
