@@ -17,5 +17,5 @@
    ```bash
    python crawler.py
    ```
-   ### Crawler will automatically create output image download folder
+   ## Crawler will automatically create output image download folder
    
